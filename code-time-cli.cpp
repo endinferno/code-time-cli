@@ -58,57 +58,117 @@ void print_time(time_t sec_time)
 	format_print(2, '0', curr_time->tm_sec);
 }
 
-int main(int argc, char *argv[])
-{
-	string str;
-	ifstream in_file;
-	char filetype_cstr[10];
-	string filetype;
-	time_t start_time, end_time;
-	time_t startup_time;
-	string home_path = getenv("HOME");
-	string data_path = home_path + "/.vim/plugged/code-time/data";
-	in_file.open(data_path, ios::in);
-	getline(in_file, str);
-	sscanf(str.c_str(), "start: %lu %s", &start_time, filetype_cstr);
-	filetype = string(filetype_cstr);
-	startup_time = start_time;
-
-	unordered_map<string, time_t> file_edit;
-	while (getline(in_file, str))
-	{
-		size_t start_loc = str.find("start:");
-		if (start_loc == string::npos) {
-			sscanf(str.c_str(), "end: %lu", &end_time);
-			file_edit[filetype] += (end_time - start_time);
-			start_time = end_time;
-		} else {
-			time_t before_start_time = start_time;
-			string before_filetype = filetype;
-			sscanf(str.c_str(), "start: %lu %s", &start_time, filetype_cstr);
-			filetype = string(filetype_cstr);
-			if (before_filetype == filetype) {
-				start_time = before_start_time;
-				continue;
-			} else {
-				if (before_filetype.size() == 0)
-					continue;
-				file_edit[before_filetype] += (start_time - before_start_time);
-			}
-		}
-	}
-	in_file.close();
-	cout << "Start Time: ";
-	print_time(startup_time);
-	cout << endl;
+void print_code_type_time(const vector<pair<string, time_t>> &type_time) {
 	format_print(10, ' ', "Type:");
 	format_print(10, ' ', "Time:");
 	cout << endl;
-	for (auto it = file_edit.begin();it != file_edit.end();it++) {
-		format_print(10, ' ', it->first);
-		format_print(10, ' ', it->second);
-		//format_print_time(it->second);
+	for (auto &code_time : type_time) {
+		format_print(10, ' ', code_time.first);
+		format_print(10, ' ', code_time.second);
 		cout << endl;
 	}
+}
+
+void print_code_start_time(time_t start_time) {
+	print_time(start_time);
+}
+
+class code_time_t {
+	public:
+		code_time_t(const string &filetype, time_t start_time, time_t end_time)
+			:filetype(filetype), start_time(start_time), last_time(end_time - start_time) {}
+		string filetype;
+		time_t start_time;
+		time_t last_time;
+};
+
+class CodeTime {
+	public:
+		CodeTime(const string &data_path)
+			:data_path(data_path) {
+				read_data();
+				cal_data();
+			}
+
+		time_t get_code_time_total() const {
+			return total_code_time;
+		}
+
+		vector<pair<string, time_t>> get_code_time_by_lang_type() const {
+			vector<pair<string, time_t>> type_time;
+			for (auto it = language_code_time.begin();it != language_code_time.end();it++)
+				type_time.push_back({it->first, it->second});
+			sort(type_time.begin(), type_time.end());
+			return type_time;
+		}
+
+		time_t get_start_code_time() const {
+			return code_start_time;
+		}
+
+	private:
+		void read_data() {
+			char filetype_cstr[20];
+			string read_content, filetype;
+			time_t start_time, end_time;
+			in_file.open(data_path, ios::in);
+
+			getline(in_file, read_content);
+			sscanf(read_content.c_str(), "start: %lu %s", &start_time, filetype_cstr);
+			filetype = string(filetype_cstr);
+			code_start_time = start_time;
+
+			while (getline(in_file, read_content)) {
+				size_t start_loc = read_content.find("start:");
+				if (start_loc == string::npos) {
+					sscanf(read_content.c_str(), "end: %lu", &end_time);
+					if (start_time != end_time)
+						code_time.push_back(code_time_t(filetype, start_time, end_time));
+					start_time = end_time;
+				} else {
+					time_t before_start_time = start_time;
+					string before_filetype = filetype;
+					sscanf(read_content.c_str(), "start: %lu %s", &start_time, filetype_cstr);
+					filetype = string(filetype_cstr);
+					if (before_filetype == filetype) {
+						start_time = before_start_time;
+						continue;
+					} else {
+						if (before_filetype.size() == 0)
+							continue;
+						if (start_time != before_start_time)
+							code_time.push_back(code_time_t(before_filetype, before_start_time, start_time));
+					}
+				}
+			}
+
+			in_file.close();
+		}
+
+		void cal_data() {
+			for (int i = 0;i < code_time.size();i++)
+				total_code_time += code_time[i].last_time;
+			for (int i = 0;i < code_time.size();i++)
+				language_code_time[code_time[i].filetype] += code_time[i].last_time;
+		}
+
+		ifstream in_file;
+		string data_path;
+		time_t code_start_time;
+		time_t total_code_time;
+		vector<code_time_t> code_time;
+		unordered_map<string, time_t> language_code_time;
+};
+
+int main(int argc, char *argv[])
+{
+	string home_path = getenv("HOME");
+	string data_path = home_path + "/.vim/plugged/code-time/data";
+	CodeTime ct(data_path);
+	cout << "Start Time: ";
+	print_code_start_time(ct.get_start_code_time());
+	cout << endl;
+	print_code_type_time(ct.get_code_time_by_lang_type());
+
 	return 0;
 }
